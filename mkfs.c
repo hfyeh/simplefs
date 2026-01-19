@@ -28,6 +28,11 @@ _Static_assert(sizeof(struct superblock) == SIMPLEFS_BLOCK_SIZE);
  */
 #define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
 
+/*
+ * Write the superblock to disk.
+ * The superblock contains metadata about the filesystem, such as block size,
+ * total blocks, total inodes, and bitmap locations.
+ */
 static struct superblock *write_superblock(int fd, struct stat *fstats)
 {
     struct superblock *sb = malloc(sizeof(struct superblock));
@@ -81,6 +86,10 @@ static struct superblock *write_superblock(int fd, struct stat *fstats)
     return sb;
 }
 
+/*
+ * Write the inode store to disk.
+ * Initializes the root inode (inode 1) and zeros out the rest.
+ */
 static int write_inode_store(int fd, struct superblock *sb)
 {
     /* Allocate a block of zeroed-out memory space for the inode storage. */
@@ -140,6 +149,10 @@ end:
     return ret;
 }
 
+/*
+ * Write the inode free bitmap to disk.
+ * Marks used inodes (0 and 1) as 0, and free inodes as 1.
+ */
 static int write_ifree_blocks(int fd, struct superblock *sb)
 {
     char *block = malloc(SIMPLEFS_BLOCK_SIZE);
@@ -181,6 +194,11 @@ end:
     return ret;
 }
 
+/*
+ * Write the block free bitmap to disk.
+ * Marks used blocks (superblock, inode store, bitmaps, root directory data) as 0,
+ * and free blocks as 1.
+ */
 static int write_bfree_blocks(int fd, struct superblock *sb)
 {
     uint32_t nr_used = le32toh(sb->info.nr_istore_blocks) +
@@ -233,6 +251,10 @@ end:
     return ret;
 }
 
+/*
+ * Write the initial data blocks.
+ * Currently just clears one block for the root directory.
+ */
 static int write_data_blocks(int fd, struct superblock *sb)
 {
     char *buffer = calloc(1, SIMPLEFS_BLOCK_SIZE);

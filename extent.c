@@ -6,8 +6,12 @@
 /* Search for the extent containing the target block. Binary search is used
  * for efficiency.
  *
+ * Returns the index of the extent that contains the block 'iblock'.
  * Returns the first unused file index if not found.
  * Returns -1 if the target block is out of range.
+ *
+ * The extents are stored in the simplefs_file_ei_block structure, which is
+ * pointed to by the inode's ei_block field.
  */
 uint32_t simplefs_ext_search(struct simplefs_file_ei_block *index,
                              uint32_t iblock)

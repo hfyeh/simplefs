@@ -23,6 +23,7 @@ static struct kmem_cache *simplefs_inode_cache;
 
 /* Needed to initiate the inode cache, to allow us to attach
  * filesystem-specific inode information.
+ * This is called when the module is loaded.
  */
 int simplefs_init_inode_cache(void)
 {
@@ -34,7 +35,9 @@ int simplefs_init_inode_cache(void)
     return 0;
 }
 
-/* De-allocate the inode cache */
+/* De-allocate the inode cache.
+ * This is called when the module is unloaded.
+ */
 void simplefs_destroy_inode_cache(void)
 {
     /* wait for call_rcu() and prevent the free cache be used */
@@ -43,6 +46,11 @@ void simplefs_destroy_inode_cache(void)
     kmem_cache_destroy(simplefs_inode_cache);
 }
 
+/* Allocate a new inode object.
+ * This function is called by the VFS when it needs to allocate a new inode.
+ * It allocates memory for the filesystem-specific inode structure (simplefs_inode_info)
+ * and initializes the VFS part of it.
+ */
 static struct inode *simplefs_alloc_inode(struct super_block *sb)
 {
     struct simplefs_inode_info *ci =
@@ -54,12 +62,19 @@ static struct inode *simplefs_alloc_inode(struct super_block *sb)
     return &ci->vfs_inode;
 }
 
+/* Destroy an inode object.
+ * This function is called by the VFS when an inode is no longer needed.
+ * It frees the memory allocated for the filesystem-specific inode structure.
+ */
 static void simplefs_destroy_inode(struct inode *inode)
 {
     struct simplefs_inode_info *ci = SIMPLEFS_INODE(inode);
     kmem_cache_free(simplefs_inode_cache, ci);
 }
 
+/* Write inode metadata to disk.
+ * This function is called by the VFS to sync inode data to disk.
+ */
 static int simplefs_write_inode(struct inode *inode,
                                 struct writeback_control *wbc)
 {
@@ -75,6 +90,7 @@ static int simplefs_write_inode(struct inode *inode,
     if (ino >= sbi->nr_inodes)
         return 0;
 
+    /* Read the block containing the inode */
     bh = sb_bread(sb, inode_block);
     if (!bh)
         return -EIO;
@@ -107,6 +123,7 @@ static int simplefs_write_inode(struct inode *inode,
     disk_inode->ei_block = ci->ei_block;
     strncpy(disk_inode->i_data, ci->i_data, sizeof(ci->i_data));
 
+    /* Mark buffer as dirty so it gets written to disk */
     mark_buffer_dirty(bh);
     sync_dirty_buffer(bh);
     brelse(bh);
@@ -114,12 +131,16 @@ static int simplefs_write_inode(struct inode *inode,
     return 0;
 }
 
+/* Release the superblock.
+ * This is called when the filesystem is unmounted.
+ */
 static void simplefs_put_super(struct super_block *sb)
 {
     struct simplefs_sb_info *sbi = SIMPLEFS_SB(sb);
     int aborted = 0;
     int err;
 
+    /* Clean up journal if it exists */
     if (sbi->journal) {
         aborted = is_journal_aborted(sbi->journal);
         err = jbd2_journal_destroy(sbi->journal);
@@ -129,6 +150,7 @@ static void simplefs_put_super(struct super_block *sb)
         }
     }
 
+    /* Sync and invalidate block device */
     sync_blockdev(sb->s_bdev);
     invalidate_bdev(sb->s_bdev);
 #if SIMPLEFS_AT_LEAST(6, 9, 0)
@@ -169,6 +191,9 @@ static void simplefs_put_super(struct super_block *sb)
     }
 }
 
+/* Sync filesystem metadata to disk.
+ * This writes the superblock and bitmaps to disk.
+ */
 static int simplefs_sync_fs(struct super_block *sb, int wait)
 {
     struct simplefs_sb_info *sbi = SIMPLEFS_SB(sb);
@@ -232,6 +257,9 @@ static int simplefs_sync_fs(struct super_block *sb, int wait)
     return 0;
 }
 
+/* Get filesystem statistics.
+ * Called by statfs() system call.
+ */
 static int simplefs_statfs(struct dentry *dentry, struct kstatfs *stat)
 {
     struct super_block *sb = dentry->d_sb;
@@ -528,7 +556,11 @@ static struct super_operations simplefs_super_ops = {
     .statfs = simplefs_statfs,
 };
 
-/* Fill the struct superblock from partition superblock */
+/* Fill the struct superblock from partition superblock.
+ * This is called when the filesystem is mounted.
+ * It reads the superblock from disk, validates it, reads the bitmaps,
+ * and initializes the root inode.
+ */
 int simplefs_fill_super(struct super_block *sb, void *data, int silent)
 {
     struct buffer_head *bh = NULL;
@@ -543,7 +575,7 @@ int simplefs_fill_super(struct super_block *sb, void *data, int silent)
     sb->s_maxbytes = SIMPLEFS_MAX_FILESIZE;
     sb->s_op = &simplefs_super_ops;
 
-    /* Read the superblock from disk */
+    /* Read the superblock from disk (block 0) */
     bh = sb_bread(sb, SIMPLEFS_SB_BLOCK_NR);
     if (!bh)
         return -EIO;
@@ -583,6 +615,7 @@ int simplefs_fill_super(struct super_block *sb, void *data, int silent)
         goto free_sbi;
     }
 
+    /* Read free inodes bitmap */
     for (i = 0; i < sbi->nr_ifree_blocks; i++) {
         int idx = sbi->nr_istore_blocks + i + 1;
 
@@ -607,6 +640,7 @@ int simplefs_fill_super(struct super_block *sb, void *data, int silent)
         goto free_ifree;
     }
 
+    /* Read free blocks bitmap */
     for (i = 0; i < sbi->nr_bfree_blocks; i++) {
         int idx = sbi->nr_istore_blocks + sbi->nr_ifree_blocks + i + 1;
 
@@ -623,7 +657,7 @@ int simplefs_fill_super(struct super_block *sb, void *data, int silent)
     }
 
     bh = NULL;
-    /* Create root inode */
+    /* Create root inode. Inode 1 is the root inode. */
     root_inode = simplefs_iget(sb, 1);
     if (IS_ERR(root_inode)) {
         ret = PTR_ERR(root_inode);

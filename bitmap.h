@@ -10,6 +10,8 @@
  * blocks. Returns 0 if an adequate number of free bits were not found.
  * Assumes the first bit is never free (reserved for the superblock and the
  * root inode), allowing the use of 0 as an error value.
+ *
+ * This function is used for both inode and block allocation.
  */
 static inline uint32_t get_first_free_bits(unsigned long *freemap,
                                            unsigned long size,
@@ -30,6 +32,8 @@ static inline uint32_t get_first_free_bits(unsigned long *freemap,
 
 /* Return an unused inode number and mark it used.
  * Return 0 if no free inode was found.
+ *
+ * This updates the in-memory free inodes bitmap.
  */
 static inline uint32_t get_free_inode(struct simplefs_sb_info *sbi)
 {
@@ -42,6 +46,9 @@ static inline uint32_t get_free_inode(struct simplefs_sb_info *sbi)
 /* Return 'len' unused block(s) number and mark it used.
  * Clean the block content.
  * Return 0 if no enough free block(s) were found.
+ *
+ * This updates the in-memory free blocks bitmap and zeroes out the
+ * allocated blocks on disk to prevent data leakage.
  */
 static inline uint32_t get_free_blocks(struct super_block *sb, uint32_t len)
 {
@@ -85,7 +92,9 @@ static inline int put_free_bits(unsigned long *freemap,
     return 0;
 }
 
-/* Mark an inode as unused */
+/* Mark an inode as unused.
+ * This frees the inode by updating the bitmap.
+ */
 static inline void put_inode(struct simplefs_sb_info *sbi, uint32_t ino)
 {
     if (put_free_bits(sbi->ifree_bitmap, sbi->nr_inodes, ino, 1))
@@ -94,7 +103,9 @@ static inline void put_inode(struct simplefs_sb_info *sbi, uint32_t ino)
     sbi->nr_free_inodes++;
 }
 
-/* Mark len block(s) as unused */
+/* Mark len block(s) as unused.
+ * This frees the blocks by updating the bitmap.
+ */
 static inline void put_blocks(struct simplefs_sb_info *sbi,
                               uint32_t bno,
                               uint32_t len)

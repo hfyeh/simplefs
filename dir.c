@@ -10,6 +10,10 @@
 /* Iterate over the files contained in dir and commit them to @ctx.
  * This function is called by the VFS as ctx->pos changes.
  * Returns 0 on success.
+ *
+ * This function handles reading the directory entries from the disk and
+ * presenting them to the user (e.g., via ls). It iterates through the
+ * directory blocks and emits entries for each file found.
  */
 static int simplefs_iterate(struct file *dir, struct dir_context *ctx)
 {

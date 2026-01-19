@@ -6,7 +6,10 @@
 
 #include "simplefs.h"
 
-/* Mount a simplefs partition */
+/* Mount a simplefs partition.
+ * This function is called by the VFS when a user mounts a simplefs filesystem.
+ * It calls mount_bdev, which in turn calls simplefs_fill_super.
+ */
 struct dentry *simplefs_mount(struct file_system_type *fs_type,
                               int flags,
                               const char *dev_name,
@@ -22,7 +25,10 @@ struct dentry *simplefs_mount(struct file_system_type *fs_type,
     return dentry;
 }
 
-/* Unmount a simplefs partition */
+/* Unmount a simplefs partition.
+ * This function is called by the VFS when a user unmounts a simplefs filesystem.
+ * It cleans up the journal device (if used) and calls kill_block_super.
+ */
 void simplefs_kill_sb(struct super_block *sb)
 {
     struct simplefs_sb_info *sbi = SIMPLEFS_SB(sb);
@@ -47,6 +53,10 @@ static struct file_system_type simplefs_file_system_type = {
     .next = NULL,
 };
 
+/* Module initialization function.
+ * Called when the module is inserted into the kernel.
+ * It initializes the inode cache and registers the filesystem type.
+ */
 static int __init simplefs_init(void)
 {
     int ret = simplefs_init_inode_cache();
@@ -72,6 +82,10 @@ err:
     return ret;
 }
 
+/* Module exit function.
+ * Called when the module is removed from the kernel.
+ * It unregisters the filesystem type and destroys the inode cache.
+ */
 static void __exit simplefs_exit(void)
 {
     int ret = unregister_filesystem(&simplefs_file_system_type);

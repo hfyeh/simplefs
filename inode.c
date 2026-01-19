@@ -84,6 +84,7 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     inode->i_blocks = le32_to_cpu(cinode->i_blocks);
     set_nlink(inode, le32_to_cpu(cinode->i_nlink));
 
+    /* Initialize file operations based on inode type */
     if (S_ISDIR(inode->i_mode)) {
         ci->ei_block = le32_to_cpu(cinode->ei_block);
         inode->i_fop = &simplefs_dir_ops;
@@ -115,6 +116,9 @@ failed:
  * if found.
  * Returns NULL on success, indicating the dentry was successfully filled or
  * confirmed absent.
+ *
+ * This function iterates over the directory blocks to find a file with the
+ * given name.
  */
 static struct dentry *simplefs_lookup(struct inode *dir,
                                       struct dentry *dentry,
@@ -133,13 +137,15 @@ static struct dentry *simplefs_lookup(struct inode *dir,
     if (dentry->d_name.len > SIMPLEFS_FILENAME_LEN)
         return ERR_PTR(-ENAMETOOLONG);
 
-    /* Read the directory block on disk */
+    /* Read the directory index block on disk */
     bh = sb_bread(sb, ci_dir->ei_block);
     if (!bh)
         return ERR_PTR(-EIO);
     eblock = (struct simplefs_file_ei_block *) bh->b_data;
 
-    /* Search for the file in directory */
+    /* Search for the file in directory.
+     * Iterate over extents, then blocks within extents, then files within blocks.
+     */
     for (ei = 0; ei < SIMPLEFS_MAX_EXTENTS; ei++) {
         if (!eblock->extents[ei].ee_start)
             break;
@@ -315,6 +321,7 @@ put_ino:
     return ERR_PTR(ret);
 }
 
+/* Helper function to find an available extent index in the directory block */
 static uint32_t simplefs_get_available_ext_idx(
     int *dir_nr_files,
     struct simplefs_file_ei_block *eblock)
@@ -340,6 +347,7 @@ static uint32_t simplefs_get_available_ext_idx(
     return first_empty_blk;
 }
 
+/* Allocate a new extent for directory growth */
 static int simplefs_put_new_ext(struct super_block *sb,
                                 uint32_t ei,
                                 struct simplefs_file_ei_block *eblock)
@@ -373,6 +381,7 @@ static int simplefs_put_new_ext(struct super_block *sb,
     return 0;
 }
 
+/* Helper to set file information into a directory block */
 static void simplefs_set_file_into_dir(struct simplefs_dir_block *dblock,
                                        uint32_t inode_no,
                                        const char *name)
@@ -563,6 +572,7 @@ end:
     return ret;
 }
 
+/* Helper function to remove a directory entry from its parent directory. */
 static int simplefs_remove_from_dir(struct inode *dir, struct dentry *dentry)
 {
     struct super_block *sb = dir->i_sb;
@@ -996,6 +1006,7 @@ static int simplefs_rmdir(struct inode *dir, struct dentry *dentry)
     return simplefs_unlink(dir, dentry);
 }
 
+/* Link a file to a new name in a directory */
 static int simplefs_link(struct dentry *old_dentry,
                          struct inode *dir,
                          struct dentry *dentry)
