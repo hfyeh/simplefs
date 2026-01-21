@@ -2,10 +2,13 @@
 #define SIMPLEFS_H
 
 /* source: https://en.wikipedia.org/wiki/Hexspeak */
+/* Magic number to identify the file system */
 #define SIMPLEFS_MAGIC 0xDEADCELL
 
+/* Superblock is always located at block 0 */
 #define SIMPLEFS_SB_BLOCK_NR 0
 
+/* Block size is 4KB */
 #define SIMPLEFS_BLOCK_SIZE (1 << 12) /* 4 KiB */
 #define SIMPLEFS_MAX_EXTENTS \
     ((SIMPLEFS_BLOCK_SIZE - sizeof(uint32_t)) / sizeof(struct simplefs_extent))
@@ -43,18 +46,22 @@
 #include <linux/jbd2.h>
 #endif
 
+/*
+ * On-disk inode structure.
+ * This structure is stored in the inode store blocks.
+ */
 struct simplefs_inode {
-    uint32_t i_mode;   /* File mode */
-    uint32_t i_uid;    /* Owner id */
-    uint32_t i_gid;    /* Group id */
-    uint32_t i_size;   /* Size in bytes */
+    uint32_t i_mode;   /* File mode (type and permissions) */
+    uint32_t i_uid;    /* Owner ID */
+    uint32_t i_gid;    /* Group ID */
+    uint32_t i_size;   /* File size in bytes */
     uint32_t i_ctime;  /* Inode change time */
     uint32_t i_atime;  /* Access time */
     uint32_t i_mtime;  /* Modification time */
-    uint32_t i_blocks; /* Block count */
-    uint32_t i_nlink;  /* Hard links count */
-    uint32_t ei_block; /* Block with list of extents for this file */
-    char i_data[32];   /* store symlink content */
+    uint32_t i_blocks; /* Number of blocks allocated to this file */
+    uint32_t i_nlink;  /* Number of hard links */
+    uint32_t ei_block; /* Block number containing the extent index for this file */
+    char i_data[32];   /* Store symlink content directly if small enough */
 };
 
 #define SIMPLEFS_INODES_PER_BLOCK \
@@ -69,35 +76,50 @@ struct simplefs_inode {
     LINUX_VERSION_CODE <= KERNEL_VERSION(major, minor, rev)
 
 /* A 'container' structure that keeps the VFS inode and additional on-disk
- * data.
+ * data. This is the in-memory representation of an inode.
  */
 struct simplefs_inode_info {
     uint32_t ei_block; /* Block with list of extents for this file */
-    char i_data[32];
-    struct inode vfs_inode;
+    char i_data[32];   /* Symlink content */
+    struct inode vfs_inode; /* Kernel's VFS inode structure */
 };
 
+/*
+ * Extent structure.
+ * An extent represents a contiguous range of physical blocks.
+ */
 struct simplefs_extent {
-    uint32_t ee_block; /* first logical block extent covers */
-    uint32_t ee_len;   /* number of blocks covered by extent */
-    uint32_t ee_start; /* first physical block extent covers */
-    uint32_t nr_files; /* Number of files in this extent */
+    uint32_t ee_block; /* First logical block this extent covers */
+    uint32_t ee_len;   /* Number of blocks covered by this extent */
+    uint32_t ee_start; /* First physical block this extent covers */
+    uint32_t nr_files; /* Number of files in this extent (used for directories) */
 };
 
+/*
+ * Block containing extent information.
+ * Pointed to by inode->ei_block.
+ */
 struct simplefs_file_ei_block {
-    uint32_t nr_files; /* Number of files in directory */
-    struct simplefs_extent extents[SIMPLEFS_MAX_EXTENTS];
+    uint32_t nr_files; /* Number of files in directory (if this is a directory) */
+    struct simplefs_extent extents[SIMPLEFS_MAX_EXTENTS]; /* List of extents */
 };
 
+/*
+ * Directory entry structure.
+ * Represents a file inside a directory.
+ */
 struct simplefs_file {
-    uint32_t inode;
-    uint32_t nr_blk;
-    char filename[SIMPLEFS_FILENAME_LEN];
+    uint32_t inode; /* Inode number */
+    uint32_t nr_blk; /* Number of directory blocks used by this entry (for variable length, simplified here) */
+    char filename[SIMPLEFS_FILENAME_LEN]; /* Filename */
 };
 
+/*
+ * A directory block containing multiple directory entries.
+ */
 struct simplefs_dir_block {
-    uint32_t nr_files;
-    struct simplefs_file files[SIMPLEFS_FILES_PER_BLOCK];
+    uint32_t nr_files; /* Number of files in this block */
+    struct simplefs_file files[SIMPLEFS_FILES_PER_BLOCK]; /* Array of file entries */
 };
 
 /* superblock functions */
@@ -132,8 +154,12 @@ extern uint32_t simplefs_ext_search(struct simplefs_file_ei_block *index,
 
 #endif /* __KERNEL__ */
 
+/*
+ * Superblock info.
+ * This structure is stored on disk at block 0 and also kept in memory.
+ */
 struct simplefs_sb_info {
-    uint32_t magic; /* Magic number */
+    uint32_t magic; /* Magic number to verify filesystem type */
 
     uint32_t nr_blocks; /* Total number of blocks (incl sb & inodes) */
     uint32_t nr_inodes; /* Total number of inodes */

@@ -13,6 +13,9 @@
  * the file denoted by inode. Should the specified block be unallocated and the
  * create flag is set to true, proceed to allocate a new block on the disk and
  * establish a mapping for it.
+ *
+ * This function maps a logical block number (iblock) to a physical block number
+ * on the disk.
  */
 static int simplefs_file_get_block(struct inode *inode,
                                    sector_t iblock,
@@ -400,6 +403,13 @@ static int simplefs_open(struct inode *inode, struct file *filp)
     return 0;
 }
 
+/*
+ * Read data from a file.
+ * This is a simple implementation that reads directly from the block device
+ * using buffer heads, bypassing the page cache for the data itself (though
+ * metadata is still cached). Note that simplefs also supports mpage_readpage,
+ * which uses the page cache. This function is used when read() is called directly.
+ */
 static ssize_t simplefs_read(struct file *file,
                              char __user *buf,
                              size_t len,
@@ -464,6 +474,11 @@ static ssize_t simplefs_read(struct file *file,
     return bytes_read;
 }
 
+/*
+ * Write data to a file.
+ * This implementation writes directly to the block device.
+ * It handles block allocation if writing past the current end of file.
+ */
 static ssize_t simplefs_write(struct file *file,
                               const char __user *buf,
                               size_t len,
